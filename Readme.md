@@ -4,6 +4,14 @@ Fine Tune Model - GDrive - https://drive.google.com/drive/folders/1Ns17jEBQJu7kL
 
 # Rasengan-XL
 
+
+
+
+![Results](https://i.postimg.cc/pr7YH6cQ/Screenshot-from-2025-11-17-22-54-36.png)
+
+
+
+
 This technical report documents how I fine-tuned the Stable Diffusion XL (SDXL) 1.0 model on an NVIDIA Tesla T4 GPU (16 GB VRAM) in Google Colab to generate Naruto-style art. The goal was to adapt the 2.6-billion-parameter SDXL base model to a specific anime style using the lambdalabs/naruto-blip-captions dataset (1,221 image-caption pairs (https://huggingface.co/datasets/lambdalabs/naruto-blip-captions). Achieving this on a 16 GB GPU required a suite of memory-saving tricks, from algorithmic techniques like LoRA and 8-bit optimization to engineering tweaks like VAE slicing and CPU offloading. The following sections detail the end-to-end pipeline (training and inference) and the rationale behind each design choice.
 
 
