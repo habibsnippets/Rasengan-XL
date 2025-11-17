@@ -5,108 +5,105 @@ Fine Tune Model - GDrive - https://drive.google.com/drive/folders/1Ns17jEBQJu7kL
 
 # Rasengan-XL
 
-This technical report documents the engineering process, architectural decisions, and optimization strategies employed to fine-tune the Stable Diffusion XL (SDXL) 1.0 model on  NVIDIA Tesla T4 GPU (16GB VRAM) using Google Colab .The objective was to adapt the 2.6-billion parameter base model to generate high quality images in the specific art style of the Naruto anime series, utilizing the lambdalabs/naruto-blip-captions dataset.
+This technical report documents how I fine-tuned the Stable Diffusion XL (SDXL) 1.0 model on an NVIDIA Tesla T4 GPU (16 GB VRAM) in Google Colab to generate Naruto-style art. The goal was to adapt the 2.6-billion-parameter SDXL base model to a specific anime style using the lambdalabs/naruto-blip-captions dataset (1,221 image-caption pairs[huggingface.co](https://huggingface.co/datasets/lambdalabs/naruto-blip-captions#:~:text=Number of rows%3A)). Achieving this on a 16 GB GPU required a suite of memory-saving tricks, from algorithmic techniques like LoRA and 8-bit optimization to engineering tweaks like VAE slicing and CPU offloading. The following sections detail the end-to-end pipeline (training and inference) and the rationale behind each design choice.
 
-This report details the end-to-end pipeline from training to inference, with a specific focus on overcoming significant hardware constraints through various techniques.
 
-**Technical Report**: Memory-Efficient Fine-Tuning of SDXL on T4 GPU.
 
-Training Methodology
+## Training Methodology
 
-So for the efficient training I used Parameter-Efficient Fine-Tuning (PEFT) using Low-Rank Adaptation (LoRA). Instead of retraining the full parameters of the UNet which would requie more than 20 GB of VRAM, I injected small, trainable rank-decomposition matrices into specific attention layers of the model while freezing the pre-trained weights.
+For efficient training, I applied **Parameter-Efficient Fine-Tuning (PEFT)** with Low-Rank Adaptation (LoRA). In practice, I froze the original UNet weights and injected small trainable adapters into key attention layers[huggingface.co](https://huggingface.co/docs/diffusers/main/en/training/lora#:~:text=Diffusers uses LoraConfig from the,lora_layers). This means I only updated new low-rank matrices (`rank=16`, `alpha=32`) in the UNet’s self-attention and cross-attention projections (specifically the `"to_q"`, `"to_k"`, `"to_v"`, and `"to_out.0"` modules). Diffusers’ `LoraConfig` supports exactly this configuration[huggingface.co](https://huggingface.co/docs/diffusers/main/en/training/lora#:~:text=Diffusers uses LoraConfig from the,lora_layers). In effect, only the LoRA layers (≈23 million parameters) were trainable — about 0.9% of the full model — drastically reducing VRAM for gradients and optimizer state.
 
-## Model Architecture & ConfigurationBase Model:
 
-Stability AI SDXL Base 1.0.Dataset: lambdalabs/naruto-blip-captions (1,221 image-text pairs).
-Resolution: 512x512 pixels (Optimized for T4 VRAM limits).
-Precision: Mixed Precision (fp16 for UNet/Text Encoders, fp32 for VAE).
 
-LoRA ConfigurationWe utilized the PEFT library to inject adapters.
-Rank ($r$): 16. This controls the dimension of the trainable matrices.A rank of 16 provides a balance between parameter efficiency and stylistic fidelity.
-Alpha ($\alpha$): 32. The scaling factor for the learned weights.
-Target Modules: ["to_q", "to_k", "to_v", "to_out.0"]. These values were used as they specifically target the Self-Attention and Cross-Attention projection layers of the UNet. These layers are responsible for mapping the relationships between visual features and text prompts, making them the most effective targets for style transfer.
-Trainable Parameters: This configuration resulted in only ~23 million trainable parameters out of the total 2.6 billion (approx. 0.9%), significantly reducing VRAM requirements for gradients and optimizer states.
-Training Loop Implementation:
-The training loop was built to handle specific memory constraints:
-Data Loading: Made sure that the image were properly pre-processed (resized, center-cropped, normalized) and tokenized on the CPU.
-VAE Encoding: Images were encoded into latents using the VAE in float32 to ensure numerical stability, then cast to float16 for the diffusion process.
-Diffusion Process: Noise was added to latents, and the LoRA-augmented UNet predicted the noise residual.
-Optimization: Gradients were calculated only for the LoRA adapters and updated using the 8-bit AdamW optimizer.
+- **Base Model:** Stable Diffusion XL 1.0 (SDXL) with ~2.6B parameters (StabilityAI’s SDXL Base 1.0).
+- **Dataset:** `lambdalabs/naruto-blip-captions` (1,221 image-text pairs of Naruto scenes[huggingface.co](https://huggingface.co/datasets/lambdalabs/naruto-blip-captions#:~:text=Number of rows%3A)), focusing the model on the Naruto anime style.
+- **Resolution:** 512×512 pixels (downsized to fit T4 memory).
+- **Precision:** Mixed precision training was used: UNet and text encoders in 16-bit, but *VAE encoder/decoder in 32-bit* to ensure numerical stability.
+
+**LoRA Configuration:** The adapters were inserted via Hugging Face PEFT. Key settings were:
+
+
+
+- **Rank (r):** 16. This is the inner dimension of each adapter’s low-rank matrices (higher rank = more capacity).
+- **Alpha (α):** 32. A scaling factor for the LoRA weights.
+- **Target Modules:** `["to_q", "to_k", "to_v", "to_out.0"]`. These are the projection layers of the UNet’s attention blocks where the LoRA adapters were applied[huggingface.co](https://huggingface.co/docs/diffusers/main/en/training/lora#:~:text=Diffusers uses LoraConfig from the,lora_layers).
+- **Trainable Params:** Only ~23M new parameters (about 0.9% of 2.6B) were trained. The rest of the model remained frozen.
+
+## Training Loop Implementation
+
+The training loop was carefully structured to minimize memory use. Key steps:
+
+
+
+- **Data Loading:** Images were preprocessed on the CPU: resized to 512×512, center-cropped, normalized, and batched. Text prompts were tokenized in CPU RAM as well to avoid unnecessary GPU memory usage.
+- **VAE Encoding (float32):** Each image batch was encoded into latent space by the VAE in full precision on GPU. Using 32-bit here prevented NaN/overflow issues (see next section). After encoding, the latent tensors were cast to 16-bit for the diffusion step.
+- **Diffusion (UNet + LoRA):** I added noise to the VAE latents and ran the (now LoRA-augmented) UNet to predict the noise residual. Since only the LoRA adapters were trainable, backpropagation stored gradients just for those small matrices. The rest of the UNet was frozen.
+- **Optimization:** Only LoRA parameters were passed to the optimizer. I used 8-bit AdamW (via *bitsandbytes*) to update them. Switching to 8-bit AdamW offers roughly 75% memory savings over a standard 32-bit AdamW[huggingface.co](https://huggingface.co/docs/bitsandbytes/v0.43.0/en/optimizers#:~:text=,No hyperparameter tuning needed), which was crucial for fitting on 16 GB. For example, 8-bit AdamW uses 8-bit states instead of full 32-bit, drastically cutting optimizer overhead[huggingface.co](https://huggingface.co/docs/bitsandbytes/v0.43.0/en/optimizers#:~:text=,No hyperparameter tuning needed). The rest of the training (gradient clipping, scheduling) followed typical guidelines.
 
 ## Engineering Design Choices & Justifications
-In this I have tried to explain why I used what in the entire training process.
-The VAE Precision Dilemma: Why Float32?
 
-The problem I faced during training initialization, was that the SDXL VAE (Variational Autoencoder) was showing  NaN (Not a Number).These values were propogating throught the entire network and caused the training to fail. What I was doing was that I was loading the model on GPU and using float16 as the data type. It turns out that it is usntable on this data type and many users on github had also reported the same issue. So in order to solve this I enforced a strict datatype policy. While the massive UNet was loaded in fp16 to save memory, the VAE was loaded and executed in float32 (Full Precision) on the GPU. This was implemented in the training loop where I disabled the automatic mixed precision for the VAE encoding step.
-```python
-with torch.autocast(device.type, enabled=False, dtype=torch.float32):
+Each component of the pipeline was chosen to work around the T4’s memory limits:
+
+
+
+### The VAE Precision Dilemma (Why Float32?)
+
+Early in training, I encountered NaNs originating from the VAE’s encoding step. In the initial runs I had encoded images with the VAE in float16 on GPU, which caused numerical overflow. After investigating, I found others had reported SDXL’s VAE is not stable in 16-bit. The solution was to force the VAE to run in full 32-bit for encoding, then cast the output to 16-bit. In code, I wrapped the VAE encode call in a disabled-autocast block:
+
+
+
+```
+pythonCopy codewith torch.autocast(device.type, enabled=False, dtype=torch.float32):
     enc = vae_model.encode(pixel_values)
-    
 ```
 
-This ensured that the compression from pixels to latents was mathematically precise, preventing numerical overflow.
+This change prevented NaN values by ensuring precise computation during the pixels→latent compression. In short, keeping the VAE in fp32 fixed the instability that 16-bit caused, at a small cost of extra memory which the 16GB could handle.
 
-Optimization Strategy:
 
-8-bit AdamWThe Standard:
-Why the 8bit AdamW over the standard one?
-Well using 8-bit AdamW over standard AdamW primarily offers significant memory savings and can improve training speed, making it highly beneficial for training or fine-tuning large models on memory-constrained hardware.
-Standard AdamW requires storing optimizer states (first and second moments) in full precision (typically float32), consuming approximately 8 bytes per model parameter, which can double the memory requirement compared to the model itself.
-For a model with 8 billion parameters, this translates to roughly 64 GB of GPU memory dedicated solely to optimizer states.
-Basically this doc helped a lot : https://huggingface.co/docs/bitsandbytes/v0.43.0/en/optimizers
 
-So using the above technique quantizes the optimizer states into 8-bit integers, reducing the memory footprint of the optimizer by approximately 75%.
+### 8-bit AdamW vs. Standard AdamW
 
-VAE Slicing During Inference:
-So during the inference I was wasting a lot of time as I was using the CPU for it. Also when I used GPU, it caused the OOM error. So I came across this : https://github.com/vladmandic/sdnext/issues/3416
+Instead of the default AdamW optimizer, I used bitsandbytes’ 8-bit AdamW. The advantage is huge memory savings: typically ~4× less memory, which aligns with documentation stating ~75% memory reduction[huggingface.co](https://huggingface.co/docs/bitsandbytes/v0.43.0/en/optimizers#:~:text=,No hyperparameter tuning needed). On a model with billions of parameters, full 32-bit AdamW would have required enormous RAM for the optimizer’s state (e.g. hundreds of GB for 8B parameters). With 8-bit AdamW, those states are quantized, so I could train effectively on 16 GB. Hugging Face’s bitsandbytes docs explicitly note that 8-bit AdamW preserves performance while slashing memory (75% less footprint)[huggingface.co](https://huggingface.co/docs/bitsandbytes/v0.43.0/en/optimizers#:~:text=,No hyperparameter tuning needed). In practice, this enabled the training to run without GPU memory errors.
 
-Was kinda facing the same problem, these people just put that into words for me. So used this source : https://huggingface.co/docs/diffusers/v0.26.2/en/optimization/memory to understand the issue.
-So basically what was happening was that during inference the final step involves the VAE decoding the latent representation  back into a full pixel image . This convolution operation requires a massive temporary tensor allocation that typically exceeds the 16GB VRAM buffer of a T4 GPU, causing an OutOfMemoryError at the very last second.
 
-So to solve this I implemented VAE Slicing:
 
-```python
-  (pipe.enable_vae_slicing())
+### Inference Memory Optimizations
+
+For inference (generation), I also needed tricks:
+
+
+
+- **VAE Slicing:** Even after training, generating images was tricky. The final VAE *decoding* step (latent→pixel) can blow up memory if done in one go. Diffusers provides a “sliced VAE” mode: calling `pipe.enable_vae_slicing()` causes the VAE to decode the image in smaller patches sequentially[huggingface.co](https://huggingface.co/docs/diffusers/v0.26.2/en/optimization/memory#:~:text=Sliced VAE enables decoding large,if you have xFormers installed). I enabled this, so instead of allocating one giant tensor, the VAE processes the image slice-by-slice. This adds a bit of computation time but prevents the 16 GB GPU from OOM-ing in the last step[huggingface.co](https://huggingface.co/docs/diffusers/v0.26.2/en/optimization/memory#:~:text=Sliced VAE enables decoding large,if you have xFormers installed). In short, VAE slicing traded time for a huge drop in peak memory.
+- **CPU Offloading (Attempted):** I experimented with `pipe.enable_sequential_cpu_offload()`[huggingface.co](https://huggingface.co/docs/diffusers/v0.26.2/en/optimization/memory#:~:text=To perform CPU offloading%2C call,enable_sequential_cpu_offload), which moves parts of the model to CPU during inference to save GPU RAM. The docs show this can reduce VRAM dramatically[huggingface.co](https://huggingface.co/docs/diffusers/v0.26.2/en/optimization/memory#:~:text=To perform CPU offloading%2C call,enable_sequential_cpu_offload), but each diffusion step then swaps submodules on and off the GPU, making inference *very* slow[huggingface.co](https://huggingface.co/docs/diffusers/v0.26.2/en/optimization/memory#:~:text=CPU offloading works on submodules,large number of memory transfers). In my tests, CPU offload let the model fit, but generation became prohibitively slow and still sometimes OOM’d (since after one pass it had to keep swapping for the next prompt). Ultimately I chose to keep everything on GPU but load it carefully (see next point).
+- **Low-CPU-Memory Loading:** To avoid Colab’s RAM crash when loading all components together, I used `low_cpu_mem_usage=True` on the `from_pretrained` calls. This parameter (documented by Hugging Face) loads models directly onto the GPU with minimal CPU buffering. By loading each submodule (VAE, UNet, CLIP encoders) with `low_cpu_mem_usage=True` and then assembling the pipeline, I prevented the system RAM from overflowing. In effect, I bypassed the normal cache-heavy load to keep the CPU free and rely on GPU memory.
+
+### Storage & Loading Strategy
+
+Another practical issue was saving and loading checkpoints. Re-downloading the full SDXL model each time was slow. To speed this up, I saved model parts individually to Google Drive (e.g. `/unet`, `/vae` folders). Since the default `StableDiffusionXLPipeline.from_pretrained()` expects a `model_index.json`, I wrote a small custom loader that points each component to its Drive location and then constructs the pipeline manually. This let me reuse already-downloaded weights without conforming to a single directory layout.
+
+
+
+### Silent LoRA Failure (Name Mismatch)
+
+Initially, after training, the fine-tuned model appeared to produce *the same* images as the base SDXL model – clearly the Naruto style wasn’t being applied. I realized this was due to a naming/namespace mismatch between how PEFT saved the LoRA keys and how Diffusers expected them. The fix was a “hard” weight injection: wrapping the original UNet in a `PeftModel` and then merging the weights. In practice, I did:
+
+
 
 ```
-Instead of decoding the entire latent tensor at once, this technique splits the image into smaller "slices," decodes them sequentially, and stitches the output back together. This trades a small amount of computation time for a massive reduction in peak VRAM usage, preventing the crash.
-
-Also as mentioned above intially I  attempted to use Sequential CPU Offloading (enable_sequential_cpu_offload) to do inferencingon the CPU directly.Though this allowed the model to fit by keeping weights in System RAM (CPU), it was slow and after generating a pair of image - one from the normal and one from the fine tuned model it used to run out of memory. So i decided to simply use the GPU for inferencing. In that as well I managed the memory manually by using 
-
-```python
-  low_cpu_mem_usage=True
+pythonCopy codepipe.unet = PeftModel.from_pretrained(pipe.unet, LORA_WEIGHTS_PATH)
+pipe.unet = pipe.unet.merge_and_unload()
 ```
-during the the loading process. This reduced inference time by a lottttt!
 
-# Some issue and their solutions:
-So loading all the components all together lead to system RAM hitting its limit and the colab runtime crashing as well. In order to handle this I utilized 
-```python
-  low_cpu_mem_usage=True
-```
-(can be found at : https://huggingface.co/docs/diffusers/v0.26.2/en/optimization/) during the from_pretrained calls.
-
-Storage Optimizations - cause downlaoding the model again and again when runtime used to stop was a pain: To optimize storage, I saved model components (/unet, /vae) individually to Google Drive. However, the standard StableDiffusionXLPipeline.from_pretrained() method expects a model_index.json file to map these components, which was missing.So I wrote a basic pipeline which instantiated each class (CLIPTextModel, UNet2DConditionModel, etc.) individually by pointing them to their specific subfolders on Google Drive, and then manually injected them into the Pipeline constructor. This decoupled my storage structure from the library's rigid directory requirements.
-
-Silent LoRA Failure (Generic Image Output)Issue:
-So another thing that I observed during inference was that the basic model and the fine tuned model were generating the same outputs initially. Shocked was I.
-After GPTing enough I understood that there was a namespace  mismatch between the peft training keys and the diffusers inference keys.To solve this I used a Hard Weight Injection strategy. Instead of relying on the pipeline to map weights, I used the PeftModel library to wrap the UNet directly
+This forces-drops the LoRA weights directly into the UNet. Hugging Face’s documentation on merging LoRAs describes this exact process (create a PeftModel and merge it) as the recommended way to fuse LoRA adapters into the base weights[huggingface.co](https://huggingface.co/docs/diffusers/main/en/using-diffusers/merge_loras#:~:text=1,merging method of your choice). After this step, the style transfer was correctly applied in the generated images.
 
 
 
-```python
-  pipe.unet = PeftModel.from_pretrained(pipe.unet, LORA_WEIGHTS_PATH)
-  pipe.unet = pipe.unet.merge_and_unload()
+### Gradient Checkpointing
 
-```
-This mathematically fused the LoRA weights into the base model weights, guaranteeing that the style was applied.
+Finally, to save memory during backpropagation, I enabled gradient checkpointing on the UNet. This technique does *not* store all intermediate activations. Instead, it re-computes them on the backward pass as needed, which can roughly halve the peak memory usage. According to performance guides, gradient checkpointing can cut VRAM by ~30–50% (with a 15–25% speed penalty)[runpod.io](https://www.runpod.io/articles/guides/scaling-stable-diffusion-training-on-runpod-multi-gpu-infrastructure#:~:text=match at L286 Gradient checkpointing,memory savings without quality loss). In practice, enabling `unet.enable_gradient_checkpointing()` was essential to fit the training on 16 GB VRAM. The extra computation was an acceptable trade-off for the ability to run the larger model.
 
-Optimizing the gradient memory: 
 
-Training a 2.6B parameter model requires storing activations for backpropagation, which scales linearly with model depth.So I used Gradient Checkpointing 
-```python
-  (unet.enable_gradient_checkpointing())
-```
-This technique does not store all intermediate activations during the forward pass; instead, it re-computes them on the fly during the backward pass which also reduced the VRAM usage.
 
-Conclusion:
-Through a combination of algorithmic optimization (LoRA, Gradient Checkpointing) and low-level engineering (Memory Offloading, VAE Slicing, Precision Management), we successfully fine-tuned and deployed a state-of-the-art generative model on constrained hardware. The final model demonstrates a high-fidelity transfer of the Naruto art style while maintaining the generalization capabilities of the base SDXL architecture.
+## Conclusion
+
+By combining multiple layers of optimization, I successfully fine-tuned SDXL on a constrained 16 GB GPU. Algorithmic techniques (LoRA and gradient checkpointing) and engineering tricks (8-bit AdamW, VAE slicing, careful memory loading) worked together to keep memory under control. The end result is a fine-tuned model that generates Naruto-style images with high fidelity, all without sacrificing the SDXL base’s generative quality. This project demonstrates that even a 2.6B-parameter model can be trained and used on consumer-grade hardware with careful engineering.
