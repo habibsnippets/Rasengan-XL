@@ -59,8 +59,8 @@ Early in training, I encountered NaNs originating from the VAE’s encoding step
 
 
 
-```
-pythonCopy codewith torch.autocast(device.type, enabled=False, dtype=torch.float32):
+```python
+with torch.autocast(device.type, enabled=False, dtype=torch.float32):
     enc = vae_model.encode(pixel_values)
 ```
 
@@ -96,8 +96,8 @@ Initially, after training, the fine-tuned model appeared to produce *the same* i
 
 
 
-```
-pythonCopy codepipe.unet = PeftModel.from_pretrained(pipe.unet, LORA_WEIGHTS_PATH)
+```python
+pipe.unet = PeftModel.from_pretrained(pipe.unet, LORA_WEIGHTS_PATH)
 pipe.unet = pipe.unet.merge_and_unload()
 ```
 
