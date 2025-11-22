@@ -1,7 +1,7 @@
 # Rasengan-XL - Technical Report
 
 Fine Tune Model - GDrive - https://drive.google.com/drive/folders/1Ns17jEBQJu7kL5i7-9HUvAvgQRJjpmJj?usp=sharing
-
+ fd
 
 # Rasengan-XL
 
@@ -106,4 +106,9 @@ Finally, to save memory during backpropagation, I enabled gradient checkpointing
 
 ## Conclusion
 
+<<<<<<< HEAD
 By combining multiple layers of optimization, I successfully fine-tuned SDXL on a constrained 16 GB GPU. Algorithmic techniques (LoRA and gradient checkpointing) and engineering tricks (8-bit AdamW, VAE slicing, careful memory loading) worked together to keep memory under control. The end result is a fine-tuned model that generates Naruto-style images with high fidelity, all without sacrificing the SDXL base’s generative quality. This project demonstrates that even a 2.6B-parameter model can be trained and used on consumer-grade hardware with careful engineering.
+=======
+Conclusion:
+Through a combination of algorithmic optimization (LoRA, Gradient Checkpointing) and low-level engineering (Memory Offloading, VAE Slicing, Precision Management), we successfully fine-tuned and deployed a state-of-the-art generative model on constrained hardware. The final model demonstrates a high-fidelity transfer of the Naruto art style while maintaining the generalization capabilities of the base SDXL architecture.
+>>>>>>> 45d321e2f9133da880e12392c79e1886b27a4309
