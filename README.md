@@ -74,7 +74,7 @@ Target modules limited to attention layers only (q, k, v, and output projections
 DoRA (Weight-Decomposed LoRA)
 Training + Inference: https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL_DORA.ipynb
 Results:
-(Bill)[https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL_DORA.ipynb]
+(Bill)[https://i.postimg.cc/prfsxt5L/Screenshot-from-2025-11-22-17-23-39.png]
 DoRA was used as a third approach to test whether decoupling direction and magnitude improves fine-tuning quality.
 
 In this approach:
