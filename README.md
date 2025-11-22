@@ -9,15 +9,26 @@ Training Approaches Used:
 The model was trained using three different approaches.
 
 Standard LoRA (No Quantization): 
-Training: https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL-LoRA/Rasengan_XL_Training%20(1).ipynb
-Inference: https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL-LoRA/inference.ipynb
+
+Training: 
+
+https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL-LoRA/Rasengan_XL_Training%20(1).ipynb
+
+
+Inference:
+
+https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL-LoRA/inference.ipynb
+
+
 Results:
-[Bill Gates](https://i.postimg.cc/3xMcPnyK/Screenshot-from-2025-11-22-17-20-21.png)
+
+![Bill Gates](https://i.postimg.cc/3xMcPnyK/Screenshot-from-2025-11-22-17-20-21.png)
 
 In this approach:
-The base SDXL model was loaded in full precision.
-LoRA adapters were injected into attention layers.
-No quantization was applied.
+
+* The base SDXL model was loaded in full precision.
+* LoRA adapters were injected into attention layers.
+* No quantization was applied.
 
 This served as the baseline fine-tuning method.
 
@@ -30,18 +41,26 @@ Only LoRA adapters were trained.
 Lower percentage of trainable parameters.
 
 
-QLoRA Approaches
+QLoRA Approaches:
 
 Two different QLoRA configurations were explored using 4-bit NF4 quantization.
 
 QLoRA quantizes the base weights to 4-bit and then trains low-rank adapters on top of them. This significantly reduces memory usage and allows training on limited hardware.
 
-a) Aggressive QLoRA
-Training: https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL-QLoRA/Rasengan_XL_Training_QLoRA_Aggressive.ipynb
-Inference: https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL-QLoRA/inference_qlora_aggressive.ipynb
+a) Aggressive QLoRA:
+
+Training:
+
+https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL-QLoRA/Rasengan_XL_Training_QLoRA_Aggressive.ipynb
+
+Inference:
+
+https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL-QLoRA/inference_qlora_aggressive.ipynb
 
 Results:
-[Bill gates](https://i.postimg.cc/LX47x5JR/Screenshot-from-2025-11-22-17-19-08.png)
+
+
+![Bill gates](https://i.postimg.cc/LX47x5JR/Screenshot-from-2025-11-22-17-19-08.png)
 
 This version was designed to maximize model adaptability
 
@@ -58,10 +77,17 @@ Higher number of trainable parameters.
 Higher representational capacity.
 
 
-b) Normal QLoRA
-Training + Inferenece (Kaggle) - single notebook: https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL-QLoRA/Rasengan-XL_QLoRA_Normal.ipynb
-Results: 
-(Bill)[https://i.postimg.cc/Pq6ss1sV/Screenshot-from-2025-11-22-17-21-32.png]
+b) Normal QLoRA:
+
+Training + Inferenece (Kaggle) - single notebook:
+
+https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL-QLoRA/Rasengan-XL_QLoRA_Normal.ipynb
+
+
+Results:
+
+![Bill](https://i.postimg.cc/Pq6ss1sV/Screenshot-from-2025-11-22-17-21-32.png)
+
 This version was designed to be more conservative and efficient.
 
 Characteristics:
@@ -71,10 +97,16 @@ Lower LoRA rank - 16
 Target modules limited to attention layers only (q, k, v, and output projections).
 
 
-DoRA (Weight-Decomposed LoRA)
-Training + Inference: https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL_DORA.ipynb
+DoRA (Weight-Decomposed LoRA):
+
+Training + Inference:
+
+https://github.com/habibsnippets/Rasengan-XL/blob/master/Rasengan-XL_DORA.ipynb
+
 Results:
-(Bill)[https://i.postimg.cc/prfsxt5L/Screenshot-from-2025-11-22-17-23-39.png]
+
+![Bill](https://i.postimg.cc/prfsxt5L/Screenshot-from-2025-11-22-17-23-39.png)
+
 DoRA was used as a third approach to test whether decoupling direction and magnitude improves fine-tuning quality.
 
 In this approach:
@@ -118,3 +150,7 @@ Three fine-tuned SDXL variants (LoRA, QLoRA, DoRA).
 Inference scripts for base vs fine-tuned comparison.
 
 Side-by-side visual results for each approach.
+
+
+Final Note:
+> While Full-precision LoRA achieved the lowest final loss (0.0971), QLoRA with aggressive quantization reached a comparable loss of 0.0980 while significantly reducing memory requirements. Interestingly, DoRA achieved similar loss levels (~0.1) while maintaining step times comparable to Normal LoRA, making it a strong candidate for efficient large-scale fine-tuning when both speed and memory are constraints.
