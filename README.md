@@ -8,7 +8,7 @@ Training Approaches Used:
 
 The model was trained using three different approaches.
 
-Standard LoRA (No Quantization): 
+## Standard LoRA (No Quantization): 
 
 Training: 
 
@@ -32,7 +32,7 @@ In this approach:
 
 This served as the baseline fine-tuning method.
 
-Key characteristics:
+*Key characteristics*:
 
 Base model kept in full precision.
 
@@ -41,13 +41,13 @@ Only LoRA adapters were trained.
 Lower percentage of trainable parameters.
 
 
-QLoRA Approaches:
+## QLoRA Approaches:
 
 Two different QLoRA configurations were explored using 4-bit NF4 quantization.
 
 QLoRA quantizes the base weights to 4-bit and then trains low-rank adapters on top of them. This significantly reduces memory usage and allows training on limited hardware.
 
-a) Aggressive QLoRA:
+### a) Aggressive QLoRA:
 
 Training:
 
@@ -64,7 +64,7 @@ Results:
 
 This version was designed to maximize model adaptability
 
-Characteristics:
+*Characteristics*:
 
 Higher LoRA rank - 32
 
@@ -77,7 +77,7 @@ Higher number of trainable parameters.
 Higher representational capacity.
 
 
-b) Normal QLoRA:
+## b) Normal QLoRA:
 
 Training + Inferenece (Kaggle) - single notebook:
 
@@ -90,14 +90,14 @@ Results:
 
 This version was designed to be more conservative and efficient.
 
-Characteristics:
+** Characteristics:
 
 Lower LoRA rank - 16
 
 Target modules limited to attention layers only (q, k, v, and output projections).
 
 
-DoRA (Weight-Decomposed LoRA):
+## DoRA (Weight-Decomposed LoRA):
 
 Training + Inference:
 
@@ -118,15 +118,8 @@ Base model weights remained frozen.
 The fine-tuning focused on more stable weight updates.
 
 
-Hardware Setup
 
-The experiments were performed on limited VRAM environments such as:
-
-NVIDIA Tesla T4 (16GB)
-
-Kaggle GPUs
-
-Various memory optimization strategies such as:
+### Various memory optimization strategies such as:
 
 Gradient checkpointing
 
@@ -144,12 +137,7 @@ Outputs
 
 The final outcome includes:
 
-Three fine-tuned SDXL variants (LoRA, QLoRA, DoRA).
-
-
-Inference scripts for base vs fine-tuned comparison.
-
-Side-by-side visual results for each approach.
+Three fine-tuned SDXL variants (LoRA, QLoRA, DoRA) and a side by side visual results for each approach.
 
 
 Final Note:
